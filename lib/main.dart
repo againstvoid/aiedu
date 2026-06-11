@@ -742,6 +742,7 @@ class _WordListPageState extends State<WordListPage> {
                         itemBuilder: (context, index) {
                           final word = words[index];
                           return WordCard(
+                            key: ValueKey(word.id),
                             word: word,
                             onTap: () => _openDetail(word, words),
                             onChanged: (value) async {
@@ -799,7 +800,13 @@ class WordCard extends StatelessWidget {
           padding: const EdgeInsets.all(12),
           child: Row(
             children: [
-              GlyphBox(word: word, size: 66),
+              GlyphBox(
+                key: ValueKey(
+                  'list-glyph-${word.id}-${word.updatedAt.toIso8601String()}',
+                ),
+                word: word,
+                size: 66,
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -1087,6 +1094,9 @@ class _WordEditPageState extends State<WordEditPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   GlyphBox(
+                    key: ValueKey(
+                      'editor-${_characterController.text.trim()}-$_glyphImageUrl-$_strokeGifUrl',
+                    ),
                     word: WordEntry(
                       id: '',
                       character: _characterController.text.trim(),
@@ -1399,7 +1409,13 @@ class _WordDetailPageState extends State<WordDetailPage> {
                         padding: const EdgeInsets.all(18),
                         child: Column(
                           children: [
-                            GlyphBox(word: word, size: 150),
+                            GlyphBox(
+                              key: ValueKey(
+                                'detail-${word.id}-${word.updatedAt.toIso8601String()}',
+                              ),
+                              word: word,
+                              size: 150,
+                            ),
                             const SizedBox(height: 12),
                             Text(
                               word.pinyinText,
@@ -1599,6 +1615,20 @@ class GlyphBox extends StatefulWidget {
 class _GlyphBoxState extends State<GlyphBox> {
   bool _showStroke = false;
   Future<Uint8List>? _strokeBytesFuture;
+
+  @override
+  void didUpdateWidget(covariant GlyphBox oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final wordChanged =
+        oldWidget.word.id != widget.word.id ||
+        oldWidget.word.character != widget.word.character ||
+        oldWidget.word.glyphImageUrl != widget.word.glyphImageUrl ||
+        oldWidget.word.strokeGifUrl != widget.word.strokeGifUrl;
+    if (wordChanged) {
+      _showStroke = false;
+      _strokeBytesFuture = null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
