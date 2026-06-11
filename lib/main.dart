@@ -83,6 +83,7 @@ class WordEntry {
     required this.id,
     required this.character,
     required this.glyphImageUrl,
+    required this.strokeGifUrl,
     required this.primaryPinyin,
     required this.note,
     required this.isLearned,
@@ -94,6 +95,7 @@ class WordEntry {
   final String id;
   final String character;
   final String glyphImageUrl;
+  final String strokeGifUrl;
   final String primaryPinyin;
   final String note;
   final bool isLearned;
@@ -119,6 +121,7 @@ class WordEntry {
     String? id,
     String? character,
     String? glyphImageUrl,
+    String? strokeGifUrl,
     String? primaryPinyin,
     String? note,
     bool? isLearned,
@@ -130,6 +133,7 @@ class WordEntry {
       id: id ?? this.id,
       character: character ?? this.character,
       glyphImageUrl: glyphImageUrl ?? this.glyphImageUrl,
+      strokeGifUrl: strokeGifUrl ?? this.strokeGifUrl,
       primaryPinyin: primaryPinyin ?? this.primaryPinyin,
       note: note ?? this.note,
       isLearned: isLearned ?? this.isLearned,
@@ -180,11 +184,13 @@ class ZdicResult {
   ZdicResult({
     required this.character,
     required this.glyphImageUrl,
+    required this.strokeGifUrl,
     required this.pronunciations,
   });
 
   final String character;
   final String glyphImageUrl;
+  final String strokeGifUrl;
   final List<PronunciationDraft> pronunciations;
 }
 
@@ -212,7 +218,7 @@ class AppDatabase {
     final dbPath = await getDatabasesPath();
     final db = await openDatabase(
       p.join(dbPath, 'children_words.db'),
-      version: 1,
+      version: 2,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
@@ -222,6 +228,7 @@ class AppDatabase {
             id TEXT PRIMARY KEY,
             character TEXT NOT NULL UNIQUE,
             glyph_image_url TEXT NOT NULL DEFAULT '',
+            stroke_gif_url TEXT NOT NULL DEFAULT '',
             primary_pinyin TEXT NOT NULL DEFAULT '',
             note TEXT NOT NULL DEFAULT '',
             is_learned INTEGER NOT NULL DEFAULT 0,
@@ -270,6 +277,13 @@ class AppDatabase {
           'value': 'false',
           'updated_at': DateTime.now().toIso8601String(),
         });
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute(
+            "ALTER TABLE words ADD COLUMN stroke_gif_url TEXT NOT NULL DEFAULT ''",
+          );
+        }
       },
     );
     _database = db;
@@ -367,6 +381,7 @@ class AppDatabase {
         'id': word.id,
         'character': word.character,
         'glyph_image_url': word.glyphImageUrl,
+        'stroke_gif_url': word.strokeGifUrl,
         'primary_pinyin': word.primaryPinyin,
         'note': word.note,
         'is_learned': word.isLearned ? 1 : 0,
@@ -425,6 +440,7 @@ class AppDatabase {
       id: id,
       character: row['character'] as String,
       glyphImageUrl: row['glyph_image_url'] as String,
+      strokeGifUrl: (row['stroke_gif_url'] as String?) ?? '',
       primaryPinyin: row['primary_pinyin'] as String,
       note: row['note'] as String,
       isLearned: (row['is_learned'] as int) == 1,
@@ -458,10 +474,12 @@ class ZdicService {
     }
     final source = utf8.decode(response.bodyBytes);
     final document = html_parser.parse(source);
-    final glyph = _absoluteUrl(
-      document.querySelector('#glyph-img')?.attributes['src'] ??
-          document.querySelector('.char-glyph__img')?.attributes['src'] ??
-          '',
+    final glyphElement =
+        document.querySelector('#glyph-img') ??
+        document.querySelector('.char-glyph__img');
+    final glyph = _absoluteUrl(glyphElement?.attributes['src'] ?? '');
+    final strokeGif = _absoluteUrl(
+      glyphElement?.attributes['data-gif'] ?? _strokeGifFromGlyph(glyph),
     );
     final pinyins = document
         .querySelectorAll('.meta-pinyin')
@@ -490,6 +508,7 @@ class ZdicService {
     return ZdicResult(
       character: character,
       glyphImageUrl: glyph,
+      strokeGifUrl: strokeGif,
       pronunciations: drafts.isEmpty
           ? [
               PronunciationDraft(
@@ -566,6 +585,12 @@ class ZdicService {
     if (url.startsWith('//')) return 'https:$url';
     if (url.startsWith('/')) return 'https://zdic.net$url';
     return url;
+  }
+
+  String _strokeGifFromGlyph(String glyphUrl) {
+    final match = RegExp(r'/kai/cn/([0-9A-Fa-f]+)\.svg').firstMatch(glyphUrl);
+    if (match == null) return '';
+    return '//img.zdic.net/kai/jbh/${match.group(1)!.toUpperCase()}.gif';
   }
 }
 
@@ -934,6 +959,7 @@ class _WordEditPageState extends State<WordEditPage> {
   bool _loading = false;
   String? _message;
   Timer? _debounce;
+  String _strokeGifUrl = '';
 
   bool get _isEditing => widget.existing != null;
 
@@ -945,6 +971,7 @@ class _WordEditPageState extends State<WordEditPage> {
       _characterController.text = word.character;
       _noteController.text = word.note;
       _glyphImageUrl = word.glyphImageUrl;
+      _strokeGifUrl = word.strokeGifUrl;
       _isLearned = word.isLearned;
       for (final pronunciation in word.pronunciations) {
         _pronunciationControllers.add(
@@ -994,6 +1021,7 @@ class _WordEditPageState extends State<WordEditPage> {
         );
       setState(() {
         _glyphImageUrl = result.glyphImageUrl;
+        _strokeGifUrl = result.strokeGifUrl;
         _message = '已自动填充拼音和基本解释';
       });
     } catch (error) {
@@ -1038,6 +1066,7 @@ class _WordEditPageState extends State<WordEditPage> {
       id: id,
       character: character,
       glyphImageUrl: _glyphImageUrl,
+      strokeGifUrl: _strokeGifUrl,
       primaryPinyin: primary,
       note: _noteController.text.trim(),
       isLearned: _isLearned,
@@ -1067,6 +1096,7 @@ class _WordEditPageState extends State<WordEditPage> {
                       id: '',
                       character: _characterController.text.trim(),
                       glyphImageUrl: _glyphImageUrl,
+                      strokeGifUrl: _strokeGifUrl,
                       primaryPinyin: '',
                       note: '',
                       isLearned: false,
@@ -1561,40 +1591,97 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
-class GlyphBox extends StatelessWidget {
+class GlyphBox extends StatefulWidget {
   const GlyphBox({required this.word, required this.size, super.key});
 
   final WordEntry word;
   final double size;
 
   @override
+  State<GlyphBox> createState() => _GlyphBoxState();
+}
+
+class _GlyphBoxState extends State<GlyphBox> {
+  bool _showStroke = false;
+
+  @override
   Widget build(BuildContext context) {
-    final url = word.glyphImageUrl;
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _orange.withValues(alpha: 0.45), width: 2),
+    final glyphUrl = widget.word.glyphImageUrl;
+    final strokeUrl = widget.word.strokeGifUrl;
+    final canPlayStroke = strokeUrl.isNotEmpty;
+    final content = _showStroke && canPlayStroke
+        ? Image.network(
+            strokeUrl,
+            width: widget.size * 0.82,
+            height: widget.size * 0.82,
+            fit: BoxFit.contain,
+            errorBuilder: (_, _, _) => _fallbackGlyph(),
+          )
+        : glyphUrl.endsWith('.svg')
+        ? SvgPicture.network(
+            glyphUrl,
+            width: widget.size * 0.75,
+            height: widget.size * 0.75,
+            placeholderBuilder: (_) => _fallbackGlyph(),
+          )
+        : _fallbackGlyph();
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: canPlayStroke
+          ? () => setState(() => _showStroke = !_showStroke)
+          : null,
+      child: Stack(
+        children: [
+          Container(
+            width: widget.size,
+            height: widget.size,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: _orange.withValues(alpha: 0.45),
+                width: 2,
+              ),
+            ),
+            alignment: Alignment.center,
+            child: content,
+          ),
+          if (canPlayStroke)
+            Positioned(
+              right: 5,
+              bottom: 5,
+              child: Container(
+                width: widget.size < 80 ? 24 : 32,
+                height: widget.size < 80 ? 24 : 32,
+                decoration: BoxDecoration(
+                  color: (_showStroke ? _green : _blue).withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.12),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  _showStroke ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  color: Colors.white,
+                  size: widget.size < 80 ? 18 : 23,
+                ),
+              ),
+            ),
+        ],
       ),
-      alignment: Alignment.center,
-      child: url.endsWith('.svg')
-          ? SvgPicture.network(
-              url,
-              width: size * 0.75,
-              height: size * 0.75,
-              placeholderBuilder: (_) => _fallbackGlyph(),
-            )
-          : _fallbackGlyph(),
     );
   }
 
   Widget _fallbackGlyph() {
     return Text(
-      word.character.isEmpty ? '?' : word.character,
+      widget.word.character.isEmpty ? '?' : widget.word.character,
       style: TextStyle(
-        fontSize: size * 0.58,
+        fontSize: widget.size * 0.58,
         fontWeight: FontWeight.w900,
         color: _ink,
       ),
