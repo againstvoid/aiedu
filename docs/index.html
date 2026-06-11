@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>生字小本本</title>
+    <meta
+      name="description"
+      content="生字小本本是一款帮助儿童记录、查询和复习汉字的 Flutter 安卓应用。"
+    />
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #20303c;
+        --muted: #65737f;
+        --green: #45b36b;
+        --blue: #4aa3df;
+        --orange: #ffb84d;
+        --pink: #ff8ab3;
+        --paper: #fffbf0;
+        --card: #ffffff;
+        --line: rgba(32, 48, 60, 0.1);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 12% 12%, rgba(255, 184, 77, 0.24), transparent 28%),
+          radial-gradient(circle at 86% 18%, rgba(74, 163, 223, 0.2), transparent 26%),
+          linear-gradient(180deg, #fffdf5 0%, #f0fbf5 100%);
+        color: var(--ink);
+        font-family:
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .page {
+        width: min(1120px, 100%);
+        margin: 0 auto;
+        padding: 28px 20px 48px;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 8px 0 34px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 22px;
+        font-weight: 900;
+      }
+
+      .brand-mark {
+        display: grid;
+        width: 48px;
+        height: 48px;
+        place-items: center;
+        border-radius: 8px;
+        background: var(--green);
+        color: #fff;
+        font-size: 27px;
+        box-shadow: 0 10px 22px rgba(69, 179, 107, 0.22);
+      }
+
+      .nav-link {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px 14px;
+        background: rgba(255, 255, 255, 0.72);
+        color: var(--ink);
+        font-weight: 800;
+        text-decoration: none;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+        gap: 28px;
+        align-items: center;
+      }
+
+      h1 {
+        margin: 0;
+        max-width: 720px;
+        font-size: clamp(44px, 7vw, 82px);
+        line-height: 1.02;
+        letter-spacing: 0;
+      }
+
+      .lead {
+        max-width: 650px;
+        margin: 22px 0 0;
+        color: var(--muted);
+        font-size: 20px;
+        line-height: 1.7;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 28px;
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 52px;
+        border-radius: 8px;
+        padding: 0 20px;
+        font-weight: 900;
+        text-decoration: none;
+      }
+
+      .button.primary {
+        background: var(--green);
+        color: #fff;
+        box-shadow: 0 14px 28px rgba(69, 179, 107, 0.26);
+      }
+
+      .button.secondary {
+        background: var(--card);
+        color: var(--ink);
+        border: 1px solid var(--line);
+      }
+
+      .phone {
+        position: relative;
+        min-height: 540px;
+        border-radius: 8px;
+        border: 10px solid #25313b;
+        background: var(--paper);
+        box-shadow: 0 24px 50px rgba(32, 48, 60, 0.2);
+        overflow: hidden;
+      }
+
+      .phone::before {
+        content: "";
+        position: absolute;
+        top: 10px;
+        left: 50%;
+        width: 92px;
+        height: 8px;
+        transform: translateX(-50%);
+        border-radius: 8px;
+        background: #25313b;
+      }
+
+      .app-screen {
+        padding: 46px 22px 24px;
+      }
+
+      .app-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 28px;
+        font-weight: 900;
+      }
+
+      .search {
+        margin-top: 22px;
+        border-radius: 8px;
+        background: #fff;
+        padding: 16px 18px;
+        color: var(--muted);
+        font-weight: 700;
+      }
+
+      .tabs {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        margin-top: 16px;
+        overflow: hidden;
+        border: 2px solid rgba(32, 48, 60, 0.55);
+        border-radius: 8px;
+        font-weight: 900;
+        text-align: center;
+      }
+
+      .tabs span {
+        padding: 12px 4px;
+      }
+
+      .tabs span:first-child {
+        background: rgba(69, 179, 107, 0.22);
+      }
+
+      .word-card {
+        display: grid;
+        grid-template-columns: 76px 1fr;
+        gap: 14px;
+        margin-top: 18px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        padding: 14px;
+      }
+
+      .glyph {
+        display: grid;
+        place-items: center;
+        width: 76px;
+        height: 76px;
+        border: 2px solid rgba(255, 184, 77, 0.55);
+        border-radius: 8px;
+        font-size: 46px;
+        font-weight: 900;
+      }
+
+      .word-lines strong {
+        display: block;
+        color: var(--blue);
+        font-size: 20px;
+      }
+
+      .word-lines p {
+        margin: 8px 0 0;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .section {
+        margin-top: 58px;
+      }
+
+      .section h2 {
+        margin: 0 0 18px;
+        font-size: 34px;
+        letter-spacing: 0;
+      }
+
+      .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 14px;
+      }
+
+      .feature {
+        min-height: 170px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.82);
+        padding: 18px;
+      }
+
+      .icon {
+        display: grid;
+        width: 44px;
+        height: 44px;
+        place-items: center;
+        border-radius: 8px;
+        background: rgba(74, 163, 223, 0.14);
+        font-size: 24px;
+      }
+
+      .feature h3 {
+        margin: 14px 0 8px;
+        font-size: 19px;
+      }
+
+      .feature p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .download-band {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 18px;
+        align-items: center;
+        border-radius: 8px;
+        background: #20303c;
+        color: #fff;
+        padding: 24px;
+      }
+
+      .download-band h2 {
+        margin: 0 0 8px;
+      }
+
+      .download-band p {
+        margin: 0;
+        color: rgba(255, 255, 255, 0.78);
+        line-height: 1.6;
+      }
+
+      .download-band .button {
+        background: var(--orange);
+        color: #20303c;
+      }
+
+      footer {
+        margin-top: 42px;
+        color: var(--muted);
+        text-align: center;
+      }
+
+      @media (max-width: 860px) {
+        .hero,
+        .download-band {
+          grid-template-columns: 1fr;
+        }
+
+        .phone {
+          min-height: 480px;
+        }
+
+        .feature-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      @media (max-width: 560px) {
+        .page {
+          padding: 20px 14px 36px;
+        }
+
+        header {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        h1 {
+          font-size: 42px;
+        }
+
+        .lead {
+          font-size: 18px;
+        }
+
+        .feature-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .phone {
+          min-height: 430px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header>
+        <div class="brand">
+          <span class="brand-mark">字</span>
+          <span>生字小本本</span>
+        </div>
+        <a class="nav-link" href="https://github.com/againstvoid/aiedu">GitHub 项目</a>
+      </header>
+
+      <section class="hero">
+        <div>
+          <h1>把每天学到的生字，好好收进小本本。</h1>
+          <p class="lead">
+            面向儿童的安卓生字记录 App。输入一个汉字后，自动查询字形、拼音、基本解释和笔顺动画，
+            还能标记“已学会”，帮助孩子轻松复习。
+          </p>
+          <div class="actions">
+            <a
+              class="button primary"
+              href="https://github.com/againstvoid/aiedu/releases/latest/download/app-debug.apk"
+            >
+              下载最新 APK
+            </a>
+            <a class="button secondary" href="https://github.com/againstvoid/aiedu/releases/latest">
+              查看最新版本
+            </a>
+          </div>
+        </div>
+
+        <div class="phone" aria-label="应用界面预览">
+          <div class="app-screen">
+            <div class="app-title">
+              <span>生字小本本</span>
+              <span>☰</span>
+            </div>
+            <div class="search">🔍 输入生字或拼音首字母</div>
+            <div class="tabs">
+              <span>全部</span>
+              <span>未会</span>
+              <span>已会</span>
+            </div>
+            <div class="word-card">
+              <div class="glyph">地</div>
+              <div class="word-lines">
+                <strong>dì de</strong>
+                <p>记录多音字、基本解释和笔顺动画，复习时左右滑动切换。</p>
+              </div>
+            </div>
+            <div class="word-card">
+              <div class="glyph">你</div>
+              <div class="word-lines">
+                <strong>nǐ</strong>
+                <p>点一下就能标记已学会，也可以全局隐藏已经掌握的字。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>孩子和家长都容易上手</h2>
+        <div class="feature-grid">
+          <article class="feature">
+            <div class="icon">✍️</div>
+            <h3>自动补全信息</h3>
+            <p>录入汉字后自动抓取字形、拼音、基本解释和笔顺动图。</p>
+          </article>
+          <article class="feature">
+            <div class="icon">🔤</div>
+            <h3>支持多音字</h3>
+            <p>像“地”这样的字，可以保存多个读音和对应解释。</p>
+          </article>
+          <article class="feature">
+            <div class="icon">✅</div>
+            <h3>学习状态</h3>
+            <p>每个生字都能标记未学会或已学会，复习目标更清楚。</p>
+          </article>
+          <article class="feature">
+            <div class="icon">🎈</div>
+            <h3>儿童友好</h3>
+            <p>明亮、温暖、按钮大，适合孩子和家长一起使用。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section download-band">
+        <div>
+          <h2>安装最新版本</h2>
+          <p>
+            当前提供 Android debug APK，适合直接安装测试。手机需要允许安装来自浏览器或文件管理器的应用。
+          </p>
+        </div>
+        <a
+          class="button"
+          href="https://github.com/againstvoid/aiedu/releases/latest/download/app-debug.apk"
+        >
+          下载 APK
+        </a>
+      </section>
+
+      <footer>
+        生字小本本 · Flutter Android · GitHub Pages
+      </footer>
+    </main>
+  </body>
+</html>
