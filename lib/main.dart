@@ -600,6 +600,7 @@ class _WordListPageState extends State<WordListPage> {
   LearnFilter _filter = LearnFilter.all;
   String _query = '';
   bool _hideLearned = false;
+  String? _selectedWordId;
   late Future<List<WordEntry>> _future;
 
   @override
@@ -644,6 +645,124 @@ class _WordListPageState extends State<WordListPage> {
     if (changed == true) _refresh();
   }
 
+  Widget _buildControls({double maxWidth = double.infinity}) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+          child: Column(
+            children: [
+              TextField(
+                decoration: const InputDecoration(
+                  hintText: '输入生字或拼音首字母',
+                  prefixIcon: Icon(Icons.search_rounded),
+                ),
+                onChanged: (value) {
+                  _query = value;
+                  _refresh();
+                },
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: SegmentedButton<LearnFilter>(
+                      segments: const [
+                        ButtonSegment(
+                          value: LearnFilter.all,
+                          label: Text('全部'),
+                        ),
+                        ButtonSegment(
+                          value: LearnFilter.learning,
+                          label: Text('未会'),
+                        ),
+                        ButtonSegment(
+                          value: LearnFilter.learned,
+                          label: Text('已会'),
+                        ),
+                      ],
+                      selected: {_filter},
+                      onSelectionChanged: _hideLearned
+                          ? null
+                          : (values) {
+                              _filter = values.first;
+                              _selectedWordId = null;
+                              _refresh();
+                            },
+                    ),
+                  ),
+                ],
+              ),
+              if (_hideLearned)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.visibility_off_rounded,
+                        size: 16,
+                        color: _green,
+                      ),
+                      SizedBox(width: 6),
+                      Text('已在配置中隐藏已学会生字'),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWordList(List<WordEntry> words, {required bool wide}) {
+    return Stack(
+      children: [
+        ListView.separated(
+          padding: EdgeInsets.fromLTRB(16, 0, wide ? 16 : 34, 96),
+          itemCount: words.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 10),
+          itemBuilder: (context, index) {
+            final word = words[index];
+            final selected = wide && word.id == _selectedWordId;
+            return DecoratedBox(
+              decoration: selected
+                  ? BoxDecoration(
+                      border: Border.all(color: _green, width: 2),
+                      borderRadius: BorderRadius.circular(10),
+                    )
+                  : const BoxDecoration(),
+              child: WordCard(
+                key: ValueKey(word.id),
+                word: word,
+                onTap: () {
+                  if (wide) {
+                    setState(() => _selectedWordId = word.id);
+                  } else {
+                    _openDetail(word, words);
+                  }
+                },
+                onChanged: (value) async {
+                  await AppDatabase.instance.updateLearned(word.id, value);
+                  _refresh();
+                },
+              ),
+            );
+          },
+        ),
+        if (!wide)
+          Positioned(
+            right: 6,
+            top: 0,
+            bottom: 24,
+            child: AlphabetRail(words: words),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -658,115 +777,64 @@ class _WordListPageState extends State<WordListPage> {
         ],
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-              child: Column(
-                children: [
-                  TextField(
-                    decoration: const InputDecoration(
-                      hintText: '输入生字或拼音首字母',
-                      prefixIcon: Icon(Icons.search_rounded),
-                    ),
-                    onChanged: (value) {
-                      _query = value;
-                      _refresh();
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final wide = constraints.maxWidth >= 900;
+            final controlsMaxWidth = wide ? 520.0 : 720.0;
+            return Column(
+              children: [
+                _buildControls(maxWidth: controlsMaxWidth),
+                Expanded(
+                  child: FutureBuilder<List<WordEntry>>(
+                    future: _future,
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      final words = snapshot.data!;
+                      if (words.isEmpty) {
+                        return EmptyWords(onAdd: () => _openEditor());
+                      }
+                      final selectedWord = words.firstWhere(
+                        (word) => word.id == _selectedWordId,
+                        orElse: () => words.first,
+                      );
+                      _selectedWordId ??= selectedWord.id;
+                      if (!wide) return _buildWordList(words, wide: false);
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(
+                            width: 430,
+                            child: _buildWordList(words, wide: true),
+                          ),
+                          VerticalDivider(
+                            width: 1,
+                            color: Colors.black.withValues(alpha: 0.08),
+                          ),
+                          Expanded(
+                            child: WideWordPreview(
+                              word: selectedWord,
+                              onEdit: () => _openEditor(selectedWord),
+                              onOpenDetail: () =>
+                                  _openDetail(selectedWord, words),
+                              onLearnedChanged: (value) async {
+                                await AppDatabase.instance.updateLearned(
+                                  selectedWord.id,
+                                  value,
+                                );
+                                _refresh();
+                              },
+                            ),
+                          ),
+                        ],
+                      );
                     },
                   ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: SegmentedButton<LearnFilter>(
-                          segments: const [
-                            ButtonSegment(
-                              value: LearnFilter.all,
-                              label: Text('全部'),
-                            ),
-                            ButtonSegment(
-                              value: LearnFilter.learning,
-                              label: Text('未会'),
-                            ),
-                            ButtonSegment(
-                              value: LearnFilter.learned,
-                              label: Text('已会'),
-                            ),
-                          ],
-                          selected: {_filter},
-                          onSelectionChanged: _hideLearned
-                              ? null
-                              : (values) {
-                                  _filter = values.first;
-                                  _refresh();
-                                },
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (_hideLearned)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.visibility_off_rounded,
-                            size: 16,
-                            color: _green,
-                          ),
-                          SizedBox(width: 6),
-                          Text('已在配置中隐藏已学会生字'),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: FutureBuilder<List<WordEntry>>(
-                future: _future,
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  final words = snapshot.data!;
-                  if (words.isEmpty) {
-                    return EmptyWords(onAdd: () => _openEditor());
-                  }
-                  return Stack(
-                    children: [
-                      ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 34, 96),
-                        itemCount: words.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 10),
-                        itemBuilder: (context, index) {
-                          final word = words[index];
-                          return WordCard(
-                            key: ValueKey(word.id),
-                            word: word,
-                            onTap: () => _openDetail(word, words),
-                            onChanged: (value) async {
-                              await AppDatabase.instance.updateLearned(
-                                word.id,
-                                value,
-                              );
-                              _refresh();
-                            },
-                          );
-                        },
-                      ),
-                      Positioned(
-                        right: 6,
-                        top: 0,
-                        bottom: 24,
-                        child: AlphabetRail(words: words),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ],
+                ),
+              ],
+            );
+          },
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -941,6 +1009,159 @@ class EmptyWords extends StatelessWidget {
   }
 }
 
+class WideWordPreview extends StatelessWidget {
+  const WideWordPreview({
+    required this.word,
+    required this.onEdit,
+    required this.onOpenDetail,
+    required this.onLearnedChanged,
+    super.key,
+  });
+
+  final WordEntry word;
+  final VoidCallback onEdit;
+  final VoidCallback onOpenDetail;
+  final ValueChanged<bool> onLearnedChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(28, 0, 28, 32),
+          children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    GlyphBox(
+                      key: ValueKey(
+                        'wide-${word.id}-${word.updatedAt.toIso8601String()}',
+                      ),
+                      word: word,
+                      size: 164,
+                    ),
+                    const SizedBox(width: 24),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            word.character,
+                            style: const TextStyle(
+                              fontSize: 54,
+                              fontWeight: FontWeight.w900,
+                              height: 1,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            word.pinyinText,
+                            style: const TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.w900,
+                              color: _blue,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          LearnedChip(isLearned: word.isLearned),
+                          const SizedBox(height: 12),
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            value: word.isLearned,
+                            onChanged: onLearnedChanged,
+                            title: const Text('已经学会'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            for (final pronunciation in word.pronunciations) ...[
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        [
+                          pronunciation.pinyin,
+                          pronunciation.zhuyin,
+                        ].where((item) => item.isNotEmpty).join('  '),
+                        style: const TextStyle(
+                          fontSize: 21,
+                          fontWeight: FontWeight.w900,
+                          color: _green,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        pronunciation.basicExplanation.isEmpty
+                            ? '暂无解释'
+                            : pronunciation.basicExplanation,
+                        style: const TextStyle(fontSize: 17, height: 1.6),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+            if (word.note.isNotEmpty)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '备注',
+                        style: TextStyle(
+                          fontSize: 19,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(word.note, style: const TextStyle(height: 1.5)),
+                    ],
+                  ),
+                ),
+              ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: onEdit,
+                    icon: const Icon(Icons.edit_rounded),
+                    label: const Text('编辑'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onOpenDetail,
+                    icon: const Icon(Icons.open_in_full_rounded),
+                    label: const Text('详情页'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class WordEditPage extends StatefulWidget {
   const WordEditPage({super.key, this.existing});
 
@@ -1087,180 +1308,196 @@ class _WordEditPageState extends State<WordEditPage> {
       body: SafeArea(
         child: Form(
           key: _formKey,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
                 children: [
-                  GlyphBox(
-                    key: ValueKey(
-                      'editor-${_characterController.text.trim()}-$_glyphImageUrl-$_strokeGifUrl',
-                    ),
-                    word: WordEntry(
-                      id: '',
-                      character: _characterController.text.trim(),
-                      glyphImageUrl: _glyphImageUrl,
-                      strokeGifUrl: _strokeGifUrl,
-                      primaryPinyin: '',
-                      note: '',
-                      isLearned: false,
-                      createdAt: DateTime.now(),
-                      updatedAt: DateTime.now(),
-                      pronunciations: const [],
-                    ),
-                    size: 104,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      GlyphBox(
+                        key: ValueKey(
+                          'editor-${_characterController.text.trim()}-$_glyphImageUrl-$_strokeGifUrl',
+                        ),
+                        word: WordEntry(
+                          id: '',
+                          character: _characterController.text.trim(),
+                          glyphImageUrl: _glyphImageUrl,
+                          strokeGifUrl: _strokeGifUrl,
+                          primaryPinyin: '',
+                          note: '',
+                          isLearned: false,
+                          createdAt: DateTime.now(),
+                          updatedAt: DateTime.now(),
+                          pronunciations: const [],
+                        ),
+                        size: 104,
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _characterController,
+                          enabled: !_isEditing,
+                          decoration: const InputDecoration(
+                            labelText: '生字',
+                            prefixIcon: Icon(Icons.edit_rounded),
+                          ),
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                          ),
+                          validator: (value) {
+                            final text = value?.trim() ?? '';
+                            if (text.isEmpty) return '请输入一个生字';
+                            if (text.runes.length != 1) return '第一版只支持单个汉字';
+                            return null;
+                          },
+                          onChanged: _onCharacterChanged,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _characterController,
-                      enabled: !_isEditing,
-                      decoration: const InputDecoration(
-                        labelText: '生字',
-                        prefixIcon: Icon(Icons.edit_rounded),
+                  if (_loading || _message != null) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        if (_loading)
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        else
+                          const Icon(
+                            Icons.info_rounded,
+                            size: 18,
+                            color: _blue,
+                          ),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(_message ?? '')),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 18),
+                  ..._pronunciationControllers.indexed.map((item) {
+                    final index = item.$1;
+                    final controller = item.$2;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    '读音 ${index + 1}',
+                                    style: const TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  if (_pronunciationControllers.length > 1)
+                                    IconButton(
+                                      tooltip: '删除读音',
+                                      onPressed: () {
+                                        setState(() {
+                                          _pronunciationControllers
+                                              .removeAt(index)
+                                              .dispose();
+                                        });
+                                      },
+                                      icon: const Icon(Icons.close_rounded),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller: controller.pinyin,
+                                      decoration: const InputDecoration(
+                                        labelText: '拼音',
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller: controller.zhuyin,
+                                      decoration: const InputDecoration(
+                                        labelText: '注音',
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              TextFormField(
+                                controller: controller.basicExplanation,
+                                minLines: 3,
+                                maxLines: 6,
+                                decoration: const InputDecoration(
+                                  labelText: '基本解释',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w900,
-                      ),
-                      validator: (value) {
-                        final text = value?.trim() ?? '';
-                        if (text.isEmpty) return '请输入一个生字';
-                        if (text.runes.length != 1) return '第一版只支持单个汉字';
-                        return null;
-                      },
-                      onChanged: _onCharacterChanged,
+                    );
+                  }),
+                  OutlinedButton.icon(
+                    onPressed: () => setState(_addPronunciation),
+                    icon: const Icon(Icons.add_rounded),
+                    label: const Text('添加读音'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _noteController,
+                    minLines: 2,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      labelText: '备注',
+                      prefixIcon: Icon(Icons.sticky_note_2_rounded),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    value: _isLearned,
+                    onChanged: (value) => setState(() => _isLearned = value),
+                    title: const Text('已经学会'),
+                    secondary: const Icon(Icons.check_circle_rounded),
+                    tileColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
                     ),
                   ),
                 ],
               ),
-              if (_loading || _message != null) ...[
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    if (_loading)
-                      const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    else
-                      const Icon(Icons.info_rounded, size: 18, color: _blue),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(_message ?? '')),
-                  ],
-                ),
-              ],
-              const SizedBox(height: 18),
-              ..._pronunciationControllers.indexed.map((item) {
-                final index = item.$1;
-                final controller = item.$2;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        children: [
-                          Row(
-                            children: [
-                              Text(
-                                '读音 ${index + 1}',
-                                style: const TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                              const Spacer(),
-                              if (_pronunciationControllers.length > 1)
-                                IconButton(
-                                  tooltip: '删除读音',
-                                  onPressed: () {
-                                    setState(() {
-                                      _pronunciationControllers
-                                          .removeAt(index)
-                                          .dispose();
-                                    });
-                                  },
-                                  icon: const Icon(Icons.close_rounded),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextFormField(
-                                  controller: controller.pinyin,
-                                  decoration: const InputDecoration(
-                                    labelText: '拼音',
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: TextFormField(
-                                  controller: controller.zhuyin,
-                                  decoration: const InputDecoration(
-                                    labelText: '注音',
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          TextFormField(
-                            controller: controller.basicExplanation,
-                            minLines: 3,
-                            maxLines: 6,
-                            decoration: const InputDecoration(
-                              labelText: '基本解释',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }),
-              OutlinedButton.icon(
-                onPressed: () => setState(_addPronunciation),
-                icon: const Icon(Icons.add_rounded),
-                label: const Text('添加读音'),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _noteController,
-                minLines: 2,
-                maxLines: 4,
-                decoration: const InputDecoration(
-                  labelText: '备注',
-                  prefixIcon: Icon(Icons.sticky_note_2_rounded),
-                ),
-              ),
-              const SizedBox(height: 12),
-              SwitchListTile(
-                value: _isLearned,
-                onChanged: (value) => setState(() => _isLearned = value),
-                title: const Text('已经学会'),
-                secondary: const Icon(Icons.check_circle_rounded),
-                tileColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
       bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: FilledButton.icon(
-            onPressed: _loading ? null : _save,
-            icon: const Icon(Icons.save_rounded),
-            label: const Text('保存'),
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: FilledButton.icon(
+                onPressed: _loading ? null : _save,
+                icon: const Icon(Icons.save_rounded),
+                label: const Text('保存'),
+              ),
+            ),
           ),
         ),
       ),
@@ -1401,118 +1638,125 @@ class _WordDetailPageState extends State<WordDetailPage> {
                   if (velocity < -250) _move(data, 1);
                   if (velocity > 250) _move(data, -1);
                 },
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
-                  children: [
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(18),
-                        child: Column(
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 760),
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
+                      children: [
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(18),
+                            child: Column(
+                              children: [
+                                GlyphBox(
+                                  key: ValueKey(
+                                    'detail-${word.id}-${word.updatedAt.toIso8601String()}',
+                                  ),
+                                  word: word,
+                                  size: 150,
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  word.pinyinText,
+                                  style: const TextStyle(
+                                    fontSize: 26,
+                                    fontWeight: FontWeight.w900,
+                                    color: _blue,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                LearnedChip(isLearned: word.isLearned),
+                                const SizedBox(height: 10),
+                                SwitchListTile(
+                                  value: word.isLearned,
+                                  onChanged: (value) =>
+                                      _setLearned(word, value),
+                                  title: const Text('已经学会'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        for (final pronunciation in word.pronunciations) ...[
+                          Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    [
+                                      pronunciation.pinyin,
+                                      pronunciation.zhuyin,
+                                    ].where((e) => e.isNotEmpty).join('  '),
+                                    style: const TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w900,
+                                      color: _green,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    pronunciation.basicExplanation.isEmpty
+                                        ? '暂无解释'
+                                        : pronunciation.basicExplanation,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      height: 1.55,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                        ],
+                        if (word.note.isNotEmpty)
+                          Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    '备注',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(word.note),
+                                ],
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: 16),
+                        Row(
                           children: [
-                            GlyphBox(
-                              key: ValueKey(
-                                'detail-${word.id}-${word.updatedAt.toIso8601String()}',
-                              ),
-                              word: word,
-                              size: 150,
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              word.pinyinText,
-                              style: const TextStyle(
-                                fontSize: 26,
-                                fontWeight: FontWeight.w900,
-                                color: _blue,
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () => _move(data, -1),
+                                icon: const Icon(Icons.chevron_left_rounded),
+                                label: const Text('上一个'),
                               ),
                             ),
-                            const SizedBox(height: 10),
-                            LearnedChip(isLearned: word.isLearned),
-                            const SizedBox(height: 10),
-                            SwitchListTile(
-                              value: word.isLearned,
-                              onChanged: (value) => _setLearned(word, value),
-                              title: const Text('已经学会'),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () => _move(data, 1),
+                                icon: const Icon(Icons.chevron_right_rounded),
+                                label: const Text('下一个'),
+                              ),
                             ),
                           ],
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    for (final pronunciation in word.pronunciations) ...[
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                [
-                                  pronunciation.pinyin,
-                                  pronunciation.zhuyin,
-                                ].where((e) => e.isNotEmpty).join('  '),
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w900,
-                                  color: _green,
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                pronunciation.basicExplanation.isEmpty
-                                    ? '暂无解释'
-                                    : pronunciation.basicExplanation,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  height: 1.55,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                    ],
-                    if (word.note.isNotEmpty)
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                '备注',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(word.note),
-                            ],
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () => _move(data, -1),
-                            icon: const Icon(Icons.chevron_left_rounded),
-                            label: const Text('上一个'),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () => _move(data, 1),
-                            icon: const Icon(Icons.chevron_right_rounded),
-                            label: const Text('下一个'),
-                          ),
-                        ),
                       ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -1576,25 +1820,31 @@ class _SettingsPageState extends State<SettingsPage> {
         body: SafeArea(
           child: !_loaded
               ? const Center(child: CircularProgressIndicator())
-              : ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    Card(
-                      child: SwitchListTile(
-                        value: _hideLearned,
-                        onChanged: _set,
-                        secondary: const Icon(
-                          Icons.visibility_off_rounded,
-                          color: _green,
+              : Align(
+                  alignment: Alignment.topCenter,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 760),
+                    child: ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        Card(
+                          child: SwitchListTile(
+                            value: _hideLearned,
+                            onChanged: _set,
+                            secondary: const Icon(
+                              Icons.visibility_off_rounded,
+                              color: _green,
+                            ),
+                            title: const Text(
+                              '隐藏已学会生字',
+                              style: TextStyle(fontWeight: FontWeight.w900),
+                            ),
+                            subtitle: const Text('开启后，列表、搜索和详情滑动都会跳过已学会的生字。'),
+                          ),
                         ),
-                        title: const Text(
-                          '隐藏已学会生字',
-                          style: TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        subtitle: const Text('开启后，列表、搜索和详情滑动都会跳过已学会的生字。'),
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
         ),
       ),
