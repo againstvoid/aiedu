@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -479,7 +480,7 @@ class ZdicService {
         document.querySelector('.char-glyph__img');
     final glyph = _absoluteUrl(glyphElement?.attributes['src'] ?? '');
     final strokeGif = _absoluteUrl(
-      glyphElement?.attributes['data-gif'] ?? _strokeGifFromGlyph(glyph),
+      glyphElement?.attributes['data-gif'] ?? strokeGifFromGlyph(glyph),
     );
     final pinyins = document
         .querySelectorAll('.meta-pinyin')
@@ -585,12 +586,6 @@ class ZdicService {
     if (url.startsWith('//')) return 'https:$url';
     if (url.startsWith('/')) return 'https://zdic.net$url';
     return url;
-  }
-
-  String _strokeGifFromGlyph(String glyphUrl) {
-    final match = RegExp(r'/kai/cn/([0-9A-Fa-f]+)\.svg').firstMatch(glyphUrl);
-    if (match == null) return '';
-    return '//img.zdic.net/kai/jbh/${match.group(1)!.toUpperCase()}.gif';
   }
 }
 
@@ -1603,19 +1598,51 @@ class GlyphBox extends StatefulWidget {
 
 class _GlyphBoxState extends State<GlyphBox> {
   bool _showStroke = false;
+  Future<Uint8List>? _strokeBytesFuture;
 
   @override
   Widget build(BuildContext context) {
     final glyphUrl = widget.word.glyphImageUrl;
-    final strokeUrl = widget.word.strokeGifUrl;
+    final strokeUrl = widget.word.strokeGifUrl.isNotEmpty
+        ? widget.word.strokeGifUrl
+        : strokeGifFromGlyph(glyphUrl);
     final canPlayStroke = strokeUrl.isNotEmpty;
     final content = _showStroke && canPlayStroke
-        ? Image.network(
-            strokeUrl,
-            width: widget.size * 0.82,
-            height: widget.size * 0.82,
-            fit: BoxFit.contain,
-            errorBuilder: (_, _, _) => _fallbackGlyph(),
+        ? FutureBuilder<Uint8List>(
+            future: _strokeBytesFuture ??= StrokeGifLoader.load(strokeUrl),
+            builder: (context, snapshot) {
+              if (snapshot.hasData) {
+                return Image.memory(
+                  snapshot.data!,
+                  width: widget.size * 0.82,
+                  height: widget.size * 0.82,
+                  fit: BoxFit.contain,
+                  gaplessPlayback: false,
+                );
+              }
+              if (snapshot.hasError) {
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.error_outline_rounded,
+                      color: _orange,
+                      size: widget.size * 0.22,
+                    ),
+                    if (widget.size >= 100)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 4),
+                        child: Text('加载失败', style: TextStyle(fontSize: 12)),
+                      ),
+                  ],
+                );
+              }
+              return SizedBox(
+                width: widget.size * 0.28,
+                height: widget.size * 0.28,
+                child: const CircularProgressIndicator(strokeWidth: 2),
+              );
+            },
           )
         : glyphUrl.endsWith('.svg')
         ? SvgPicture.network(
@@ -1629,7 +1656,14 @@ class _GlyphBoxState extends State<GlyphBox> {
     return InkWell(
       borderRadius: BorderRadius.circular(8),
       onTap: canPlayStroke
-          ? () => setState(() => _showStroke = !_showStroke)
+          ? () {
+              setState(() {
+                _showStroke = !_showStroke;
+                if (_showStroke) {
+                  _strokeBytesFuture ??= StrokeGifLoader.load(strokeUrl);
+                }
+              });
+            }
           : null,
       child: Stack(
         children: [
@@ -1761,6 +1795,42 @@ String makeId(String prefix) {
 
 String cleanText(String text) {
   return text.replaceAll('\u00a0', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+}
+
+String strokeGifFromGlyph(String glyphUrl) {
+  final match = RegExp(r'/kai/cn/([0-9A-Fa-f]+)\.svg').firstMatch(glyphUrl);
+  if (match == null) return '';
+  return 'https://img.zdic.net/kai/jbh/${match.group(1)!.toUpperCase()}.gif';
+}
+
+class StrokeGifLoader {
+  StrokeGifLoader._();
+
+  static final Map<String, Future<Uint8List>> _cache = {};
+
+  static Future<Uint8List> load(String url) {
+    final absoluteUrl = url.startsWith('//') ? 'https:$url' : url;
+    return _cache.putIfAbsent(absoluteUrl, () async {
+      final response = await http
+          .get(
+            Uri.parse(absoluteUrl),
+            headers: const {
+              'User-Agent':
+                  'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 '
+                  '(KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
+              'Referer': 'https://zdic.net/',
+              'Accept':
+                  'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+            },
+          )
+          .timeout(const Duration(seconds: 12));
+      if (response.statusCode != 200 || response.bodyBytes.isEmpty) {
+        _cache.remove(absoluteUrl);
+        throw Exception('笔顺动画加载失败：HTTP ${response.statusCode}');
+      }
+      return response.bodyBytes;
+    });
+  }
 }
 
 String pinyinInitials(String text) {
